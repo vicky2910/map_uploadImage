@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
+    <style>
+        body {
+            margin: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        .image-container {
+            position: relative;
+            display: inline-block;
+            width: 540px;
+        }
+
+        .main-image {
+            width: 100%;
+            height: 600px;
+            object-fit: cover;
+            /* fills frame */
+            display: block;
+        }
+
+        .map-overlay {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            width: 140px;
+            height: 120px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fff;
+            box-shadow: 0 0 8px rgba(0, 0, 0, .5);
+            z-index: 10;
+            /* add this */
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .leaflet-control-attribution,
+        .leaflet-control-zoom {
+            display: none !important;
+        }
+
+        .overlay-text {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.3;
+            text-align: right;
+            text-shadow:
+                2px 2px 4px rgba(0, 0, 0, .8),
+                -1px -1px 2px rgba(0, 0, 0, .8);
+        }
+
+        button {
+            padding: 8px 15px;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+
+        select {
+            padding: 8px;
+        }
+
+        #locationNo {
+            width: 30px;
+            /* increase width */
+            height: 20px;
+            /* increase height */
+            font-size: 16px;
+            padding: 5px 10px;
+        }
+
+        .google-label {
+            position: absolute;
+            bottom: 4px;
+            left: 6px;
+            z-index: 1000;
+            font-size: 12px;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, .8);
+            pointer-events: none;
+        }
+
+        .logo {
+            position: absolute;
+            top: 4px;
+            left: 6px;
+            z-index: 1000;
+            font-size: 10px;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, .8);
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <a>Enter Image No: </a> <input type="number" id="locationNo" value="1" min="1" placeholder="Enter Location No">
+
+    <input type="file" id="imageUpload" accept="image/*" onchange="loadImage(event)">
+
+    <button onclick="loadLocation()">
+        Get GPS Location
+    </button>
+
+    <button onclick="takeScreenshot()">
+        Take Screenshot
+    </button>
+
+
+    <br><br>
+
+    <div class="image-container" id="captureArea">
+
+        <img class="main-image" crossorigin="anonymous" id="uploadImg" src="" alt="Image">
+
+        <div class="map-overlay" style="opacity:.66;">
+            <div class="logo">📍 GPS Map Camera</div>
+            <div id="map"></div>
+            <div class="google-label">Google</div>
+        </div>
+
+        <div class="overlay-text" id="locationInfo">
+            Loading...
+        </div>
+
+    </div>
+
+    <script>
+
+        const WEBAPP =
+            "https://script.google.com/macros/s/AKfycbxtcDuSNzozNwD6VzVgxVQEtnDAhPw7C79PtbHHh-i2ZcaTJ4bNC5OU2ct3v_7ZiPpo/exec";
+
+        let map;
+        let marker;
+
+        function initializeMap() {
+
+            map = L.map('map', {
+                zoomControl: false,
+                attributionControl: false,
+                dragging: false,
+                scrollWheelZoom: false,
+                doubleClickZoom: false,
+                boxZoom: false,
+                keyboard: false
+            }).setView([22.7629, 75.9516], 18);
+
+            L.tileLayer(
+                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                {
+                    maxZoom: 20
+                }
+            ).addTo(map);
+
+            marker = L.circleMarker(
+                [22.7629, 75.9516],
+                {
+                    radius: 6,
+                    fillColor: "#ff0000",
+                    color: "#ffffff",
+                    weight: 2,
+                    fillOpacity: 1
+                }
+            ).addTo(map);
+
+        }
+
+        function parseLatLong(latLong) {
+
+            let lat, lng;
+
+            if (latLong.includes(",")) {
+
+                let parts = latLong.split(",");
+
+                lat = parseFloat(parts[0].trim());
+                lng = parseFloat(parts[1].trim());
+
+            } else {
+
+                let match =
+                    latLong.match(
+                        /([\d.]+)\s*[NS]\s+([\d.]+)\s*[EW]/i
+                    );
+
+                if (match) {
+
+                    lat = parseFloat(match[1]);
+                    lng = parseFloat(match[2]);
+
+                }
+
+            }
+
+            return {
+                lat: lat,
+                lng: lng
+            };
+
+        }
+
+        function loadLocation() {
+
+            let locationNo =
+                document.getElementById("locationNo").value;
+
+            fetch(
+                WEBAPP +
+                "?locationNo=" +
+                encodeURIComponent(locationNo)
+            )
+                .then(response => response.json())
+
+                .then(data => {
+
+                    console.log(data);
+
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+
+                    let coords =
+                        parseLatLong(data.latLong);
+
+                    let lat = coords.lat;
+                    let lng = coords.lng;
+
+                    if (isNaN(lat) || isNaN(lng)) {
+
+                        alert(
+                            "Invalid LatLong: " +
+                            data.latLong
+                        );
+
+                        return;
+                    }
+
+                    let addressLines = [];
+
+                    if (data.address) {
+
+                        addressLines =
+                            data.address
+                                .split(",")
+                                .map(x => x.trim());
+
+                    }
+
+                    document.getElementById(
+                        "locationInfo"
+                    ).innerHTML = `
+            <div>${data.dateTime || ""}</div>
+            <div>${lat.toFixed(6)}N ${lng.toFixed(6)}E</div>
+            <div>${addressLines[0] || ""}</div>
+            <div>${addressLines[1] || ""}</div>
+            <div>${addressLines[2] || ""}</div>
+            <div>${addressLines[3] || ""}</div>
+        `;
+
+                    map.setView([lat, lng], 18);
+
+                    marker.setLatLng([lat, lng]);
+
+                    setTimeout(function () {
+                        map.invalidateSize();
+                    }, 500);
+
+                })
+
+                .catch(error => {
+
+                    console.error(error);
+
+                    alert(
+                        "Unable to load location."
+                    );
+
+                });
+
+        }
+
+        function takeScreenshot() {
+
+            html2canvas(
+                document.getElementById("captureArea"),
+                {
+                    useCORS: true,
+                    allowTaint: true,
+                    scale: 2,
+                    backgroundColor: null
+                }
+            ).then(function (canvas) {
+
+                let link =
+                    document.createElement("a");
+
+                let now = new Date();
+
+                let fileName =
+                    "Location_" +
+                    document.getElementById("locationNo").value +
+                    "_" +
+                    now.getFullYear() +
+                    ("0" + (now.getMonth() + 1)).slice(-2) +
+                    ("0" + now.getDate()).slice(-2) +
+                    "_" +
+                    ("0" + now.getHours()).slice(-2) +
+                    ("0" + now.getMinutes()).slice(-2) +
+                    ("0" + now.getSeconds()).slice(-2) +
+                    ".png";
+
+                link.download = fileName;
+
+                link.href =
+                    canvas.toDataURL("image/png");
+
+                link.click();
+
+            })
+                .catch(function (error) {
+
+                    console.error(error);
+
+                    alert(
+                        "Screenshot failed."
+                    );
+
+                });
+
+        }
+
+        initializeMap();
+
+        loadLocation();
+
+
+
+        function loadImage(event) {
+
+            const file = event.target.files[0];
+
+            if (!file) return;
+
+            document.getElementById("uploadImg").src =
+                URL.createObjectURL(file);
+        }
+
+    </script>
+
+</body>
+
+</html>
